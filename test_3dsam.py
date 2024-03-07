@@ -49,6 +49,17 @@ def main():
         type=str,
     )
     parser.add_argument("-tolerance", default=5, type=int)
+    parser.add_argument("--split_model", default=0, type=int)
+
+    if args.split_model == 0:
+        img_encoder.to(device)
+    elif args.split_model == 1:
+        img_encoder.to("cuda:0")
+        for i in img_encoder.blocks[6:12]:
+            i.to("cuda:1")
+    else:
+        raise ValueError("split_model should be 0 or 1")
+
     args = parser.parse_args()
     if args.checkpoint == "last":
         file = "last.pth.tar"

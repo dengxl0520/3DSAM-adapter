@@ -150,21 +150,14 @@ class ImageEncoderViT_3d(nn.Module):
 
         idx = 0
         feature_list = []
-        for blk in self.blocks[:6]:
+        for blk in self.blocks:
+            x = x.to(next(blk.parameters()).device)
             x = blk(x)
             idx += 1
             if idx % 3 == 0 and idx != 12:
+                x = x.to(next(self.neck_3d[idx//3-1].parameters()).device)
                 feature_list.append(self.neck_3d[idx//3-1](x.permute(0, 4, 1, 2, 3)))
-        for blk in self.blocks[6:12]:
-            if self.training:
-                x = x.to("cuda:1")
-                x = blk(x)
-                x = x.to("cuda:0")
-            else:
-                x = blk(x)
-            idx += 1
-            if idx % 3 == 0 and idx != 12:
-                feature_list.append(self.neck_3d[idx//3-1](x.permute(0, 4, 1, 2, 3)))
+        x = x.to(next(self.blocks[0].parameters()).device)
 
         x = self.neck_3d[-1](x.permute(0, 4, 1, 2, 3))
 
