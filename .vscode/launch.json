@@ -1,0 +1,39 @@
+{
+    // 使用 IntelliSense 了解相关属性。 
+    // 悬停以查看现有属性的描述。
+    // 欲了解更多信息，请访问: https://go.microsoft.com/fwlink/?linkid=830387
+    "version": "0.2.0",
+    "configurations": [
+        {
+            "name": "test_3dsam",
+            "type": "debugpy",
+            "request": "launch",
+            "program": "test_3dsam.py",
+            "console": "integratedTerminal",
+            "args": [
+                "--data", "bas",
+                "--snapshot_path", "logs",
+                "--rand_crop_size", "512",
+            ],
+            "env": {
+                "CUDA_VISIBLE_DEVICES": "1"
+            }
+        },
+        {
+            "name": "train_3dsam",
+            "type": "debugpy",
+            "request": "launch",
+            "program": "train_3dsam.py",
+            "console": "integratedTerminal",
+            "args": [
+                "--data", "bas",
+                "--snapshot_path", "logs",
+                "--rand_crop_size", "512",
+                // "--num_worker", "0",
+            ],
+            "env": {
+                "CUDA_VISIBLE_DEVICES": "1,2"
+            }
+        }
+    ]
+}
