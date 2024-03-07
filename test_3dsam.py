@@ -13,6 +13,7 @@ import os
 from utils.util import setup_logger
 import surface_distance
 from surface_distance import metrics
+import nibabel as nib
 
 def main():
     parser = argparse.ArgumentParser()
@@ -142,6 +143,9 @@ def main():
         masks = masks.permute(0, 1, 4, 2, 3)
         return masks
 
+    if not os.path.exists(os.path.join(args.snapshot_path, "preds")):
+        os.mkdir(os.path.join(args.snapshot_path, "preds"))
+
     with torch.no_grad():
         loss_summary = []
         loss_nsd = []
@@ -194,6 +198,13 @@ def main():
 
             final_pred = F.interpolate(seg_pred.unsqueeze(1), size = seg.shape[2:],  mode="trilinear")
             masks = final_pred > 0.5
+            # 创建新的Nifti1Image对象
+            new_img = nib.Nifti1Image(masks.int().cpu().numpy()[0][0], np.eye(4))
+
+            # 保存新的图像
+            save_name = os.path.basename(test_data.dataset.img_dict[idx]).replace("_0000", "")
+            nib.save(new_img, os.path.join(args.snapshot_path, "preds", save_name))
+
             loss = 1 - dice_loss(masks, seg)
             loss_summary.append(loss.detach().cpu().numpy())
 
