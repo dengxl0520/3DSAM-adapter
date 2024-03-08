@@ -51,15 +51,6 @@ def main():
     parser.add_argument("-tolerance", default=5, type=int)
     parser.add_argument("--split_model", default=0, type=int)
 
-    if args.split_model == 0:
-        img_encoder.to(device)
-    elif args.split_model == 1:
-        img_encoder.to("cuda:0")
-        for i in img_encoder.blocks[6:12]:
-            i.to("cuda:1")
-    else:
-        raise ValueError("split_model should be 0 or 1")
-
     args = parser.parse_args()
     if args.checkpoint == "last":
         file = "last.pth.tar"
@@ -106,7 +97,15 @@ def main():
         out_chans=256,
         num_slice = 16)
     img_encoder.load_state_dict(torch.load(os.path.join(args.snapshot_path, file), map_location='cpu')["encoder_dict"], strict=True)
-    img_encoder.to(device)
+
+    if args.split_model == 0:
+        img_encoder.to(device)
+    elif args.split_model == 1:
+        img_encoder.to("cuda:0")
+        for i in img_encoder.blocks[6:12]:
+            i.to("cuda:1")
+    else:
+        raise ValueError("split_model should be 0 or 1")
 
     prompt_encoder_list = []
     for i in range(4):
