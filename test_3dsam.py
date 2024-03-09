@@ -79,7 +79,7 @@ def main():
         convert_to_sam=False,
         do_test_crop=False,
         deterministic=True,
-        num_worker=0
+        num_worker=args.num_worker,
     )
     img_encoder = ImageEncoderViT_3d(
         depth=12,
