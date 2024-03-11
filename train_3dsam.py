@@ -1,27 +1,32 @@
-from dataset.datasets import load_data_volume
 import argparse
-from torch.optim import AdamW
-import numpy as np
 import logging
-from utils.script_util import save_checkpoint
-from monai.losses import DiceCELoss, DiceLoss
-from modeling.efficient_3dsam.efficient_3dsam_encoder import ImageEncoderViT_3d
-import torch.nn.functional as F
-from modeling.SAM.mask_decoder import VIT_MLAHead_h as VIT_MLAHead
-import torch
-from modeling.SAM.prompt_encoder import PromptEncoder, TwoWayTransformer
-import torch.nn as nn
-from functools import partial
 import os
-from utils.util import setup_logger
 import random
+from functools import partial
 
-from modeling.efficient_sam import build_efficient_sam_vitt, build_efficient_sam_vits
+import numpy as np
+import torch
+import torch.nn as nn
+import torch.nn.functional as F
+from monai.losses import DiceCELoss, DiceLoss
+from torch.optim import AdamW
+
+from dataset.datasets import load_data_volume
+from modeling.efficient_3dsam.efficient_3dsam_encoder import ImageEncoderViT_3d
+from modeling.efficient_sam import build_efficient_sam_vits, build_efficient_sam_vitt
+from modeling.SAM.mask_decoder import VIT_MLAHead_h as VIT_MLAHead
+from modeling.SAM.prompt_encoder import PromptEncoder, TwoWayTransformer
+from utils.script_util import save_checkpoint
+from utils.util import setup_logger
+
 
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument(
-        "--data", default=None, type=str, choices=["bas", "atm", "parse", "imagecas", "lung"]
+        "--data",
+        default=None,
+        type=str,
+        choices=["bas", "atm", "parse", "imagecas", "lung"],
     )
     parser.add_argument(
         "--snapshot_path",
@@ -31,7 +36,8 @@ def main():
     parser.add_argument(
         "--rand_crop_size",
         default=0,
-        nargs='+', type=int,
+        nargs="+",
+        type=int,
     )
     parser.add_argument(
         "--device",
@@ -54,7 +60,7 @@ def main():
     seed_value = args.seed
     np.random.seed(seed_value)  # set random seed for numpy
     random.seed(seed_value)  # set random seed for python
-    os.environ['PYTHONHASHSEED'] = str(seed_value)  # avoid hash random
+    os.environ["PYTHONHASHSEED"] = str(seed_value)  # avoid hash random
     torch.manual_seed(seed_value)  # set random seed for CPU
     torch.cuda.manual_seed(seed_value)  # set random seed for one GPU
     torch.cuda.manual_seed_all(seed_value)  # set random seed for all GPU
@@ -83,7 +89,7 @@ def main():
         augmentation=True,
         split="train",
         rand_crop_spatial_size=args.rand_crop_size,
-        num_worker = args.num_worker
+        num_worker=args.num_worker,
     )
     val_data = load_data_volume(
         data=args.data,
@@ -92,14 +98,14 @@ def main():
         split="val",
         deterministic=True,
         rand_crop_spatial_size=args.rand_crop_size,
-        num_worker = args.num_worker
+        num_worker=args.num_worker,
     )
-    
+
     efficient_sam = build_efficient_sam_vitt()
 
     img_encoder = ImageEncoderViT_3d(
         depth=12,
-        embed_dim=192, # efficient_sam.embed_dim,
+        embed_dim=192,  # efficient_sam.embed_dim,
         img_size=1024,
         mlp_ratio=4,
         norm_layer=partial(torch.nn.LayerNorm, eps=1e-6),
@@ -111,11 +117,12 @@ def main():
         window_size=14,
         cubic_window_size=8,
         out_chans=256,
-        num_slice = 16)
+        num_slice=16,
+    )
 
     img_encoder.load_state_dict(efficient_sam.image_encoder.state_dict(), strict=False)
     del efficient_sam
-    
+
     if args.split_model == 0:
         img_encoder.to(device)
     elif args.split_model == 1:
@@ -127,7 +134,7 @@ def main():
 
     for p in img_encoder.parameters():
         p.requires_grad = False
-    img_encoder.slice_embed.requires_grad = True # no sure required or not
+    img_encoder.slice_embed.requires_grad = True  # no sure required or not
     img_encoder.depth_embed.requires_grad = True
     for p in img_encoder.slice_embed.parameters():
         p.requires_grad = True
@@ -138,7 +145,9 @@ def main():
             p.requires_grad = True
         for p in i.norm2.parameters():
             p.requires_grad = True
-        i.attn.rel_pos_d = nn.parameter.Parameter(0.5 * (i.attn.rel_pos_h + i.attn.rel_pos_w), requires_grad=True)
+        i.attn.rel_pos_d = nn.parameter.Parameter(
+            0.5 * (i.attn.rel_pos_h + i.attn.rel_pos_w), requires_grad=True
+        )
     for i in img_encoder.neck_3d:
         for p in i.parameters():
             p.requires_grad = True
@@ -146,26 +155,50 @@ def main():
     prompt_encoder_list = []
     parameter_list = []
     for i in range(4):
-        prompt_encoder = PromptEncoder(transformer=TwoWayTransformer(depth=2,
-                                                                 embedding_dim=256,
-                                                                 mlp_dim=2048,
-                                                                 num_heads=8))
+        prompt_encoder = PromptEncoder(
+            transformer=TwoWayTransformer(
+                depth=2, embedding_dim=256, mlp_dim=2048, num_heads=8
+            )
+        )
         prompt_encoder.to(device)
         prompt_encoder_list.append(prompt_encoder)
-        parameter_list.extend([i for i in prompt_encoder.parameters() if i.requires_grad == True])
+        parameter_list.extend(
+            [i for i in prompt_encoder.parameters() if i.requires_grad == True]
+        )
 
     mask_decoder = VIT_MLAHead(img_size=96, num_classes=2)
     mask_decoder.to(device)
 
-    encoder_opt = AdamW([i for i in img_encoder.parameters() if i.requires_grad==True], lr=args.lr, weight_decay=0)
-    encoder_scheduler = torch.optim.lr_scheduler.LinearLR(encoder_opt, start_factor=1.0, end_factor=0.01, total_iters=args.max_epoch)
+    encoder_opt = AdamW(
+        [i for i in img_encoder.parameters() if i.requires_grad == True],
+        lr=args.lr,
+        weight_decay=0,
+    )
+    encoder_scheduler = torch.optim.lr_scheduler.LinearLR(
+        encoder_opt, start_factor=1.0, end_factor=0.01, total_iters=args.max_epoch
+    )
     feature_opt = AdamW(parameter_list, lr=args.lr, weight_decay=0)
-    feature_scheduler = torch.optim.lr_scheduler.LinearLR(feature_opt, start_factor=1.0, end_factor=0.01,
-                                                          total_iters=args.max_epoch)
-    decoder_opt = AdamW([i for i in mask_decoder.parameters() if i.requires_grad == True], lr=args.lr, weight_decay=0)
-    decoder_scheduler = torch.optim.lr_scheduler.LinearLR(decoder_opt, start_factor=1.0, end_factor=0.01, total_iters=args.max_epoch)
-    dice_loss = DiceLoss(include_background=False, softmax=True, to_onehot_y=True, reduction="none")
-    loss_cal = DiceCELoss(include_background=False, softmax=True, to_onehot_y=True, lambda_dice=0.5, lambda_ce=0.5)
+    feature_scheduler = torch.optim.lr_scheduler.LinearLR(
+        feature_opt, start_factor=1.0, end_factor=0.01, total_iters=args.max_epoch
+    )
+    decoder_opt = AdamW(
+        [i for i in mask_decoder.parameters() if i.requires_grad == True],
+        lr=args.lr,
+        weight_decay=0,
+    )
+    decoder_scheduler = torch.optim.lr_scheduler.LinearLR(
+        decoder_opt, start_factor=1.0, end_factor=0.01, total_iters=args.max_epoch
+    )
+    dice_loss = DiceLoss(
+        include_background=False, softmax=True, to_onehot_y=True, reduction="none"
+    )
+    loss_cal = DiceCELoss(
+        include_background=False,
+        softmax=True,
+        to_onehot_y=True,
+        lambda_dice=0.5,
+        lambda_ce=0.5,
+    )
     best_loss = np.inf
     patch_size = args.rand_crop_size[0]
     for epoch_num in range(args.max_epoch):
@@ -175,7 +208,7 @@ def main():
             module.train()
         mask_decoder.train()
         for idx, (img, seg, spacing) in enumerate(train_data):
-            print('seg: ', seg.sum())
+            print("seg: ", seg.sum())
             # input_batch = F.interpolate(img.float(), scale_factor=512 / patch_size, mode='trilinear')
             input_batch = img.float()
             # input_batch = (out.cuda() - pixel_mean) / pixel_std
@@ -183,7 +216,7 @@ def main():
             input_batch = input_batch[0].transpose(0, 1)
             batch_features, feature_list = img_encoder(input_batch)
             feature_list.append(batch_features)
-            #feature_list = feature_list[::-1]
+            # feature_list = feature_list[::-1]
             l = len(torch.where(seg == 1)[0])
             points_torch = None
             if l > 0:
@@ -193,7 +226,7 @@ def main():
                 z = torch.where(seg == 1)[2][sample].unsqueeze(1)
                 points = torch.cat([x, y, z], dim=1).unsqueeze(1).float()
                 points_torch = points.to(device)
-                points_torch = points_torch.transpose(0,1)
+                points_torch = points_torch.transpose(0, 1)
             l = len(torch.where(seg < 10)[0])
             sample = np.random.choice(np.arange(l), 20, replace=True)
             x = torch.where(seg < 10)[1][sample].unsqueeze(1)
@@ -207,17 +240,26 @@ def main():
             else:
                 points_torch = points_torch_negative
             new_feature = []
-            for i, (feature, prompt_encoder) in enumerate(zip(feature_list, prompt_encoder_list)):
+            for i, (feature, prompt_encoder) in enumerate(
+                zip(feature_list, prompt_encoder_list)
+            ):
                 if i == 3:
                     new_feature.append(
-                        prompt_encoder(feature, points_torch.clone(), [patch_size, patch_size, patch_size])
+                        prompt_encoder(
+                            feature,
+                            points_torch.clone(),
+                            [patch_size, patch_size, patch_size],
+                        )
                     )
                 else:
                     new_feature.append(feature)
-            img_resize = F.interpolate(img[:, 0].permute(0, 2, 3, 1).unsqueeze(1).to(device), scale_factor=64/patch_size,
-                mode='trilinear')
+            img_resize = F.interpolate(
+                img[:, 0].permute(0, 2, 3, 1).unsqueeze(1).to(device),
+                scale_factor=64 / patch_size,
+                mode="trilinear",
+            )
             new_feature.append(img_resize)
-            masks = mask_decoder(new_feature, 2, patch_size//64)
+            masks = mask_decoder(new_feature, 2, patch_size // 64)
             masks = masks.permute(0, 1, 4, 2, 3)
             seg = seg.to(device)
             seg = seg.unsqueeze(1)
@@ -228,8 +270,12 @@ def main():
             feature_opt.zero_grad()
             loss.backward()
             logger.info(
-                'epoch: {}/{}, iter: {}/{}'.format(epoch_num, args.max_epoch, idx, len(train_data)) + ": loss:" + str(
-                    loss_summary[-1].flatten()[0]))
+                "epoch: {}/{}, iter: {}/{}".format(
+                    epoch_num, args.max_epoch, idx, len(train_data)
+                )
+                + ": loss:"
+                + str(loss_summary[-1].flatten()[0])
+            )
             torch.nn.utils.clip_grad_norm_(img_encoder.parameters(), 1.0)
             torch.nn.utils.clip_grad_norm_(mask_decoder.parameters(), 1.0)
             torch.nn.utils.clip_grad_norm_(prompt_encoder_list[-1].parameters(), 1.0)
@@ -249,13 +295,15 @@ def main():
         with torch.no_grad():
             loss_summary = []
             for idx, (img, seg, spacing) in enumerate(val_data):
-                print('seg: ', seg.sum())
-                out = F.interpolate(img.float(), scale_factor=512 / patch_size, mode='trilinear')
+                print("seg: ", seg.sum())
+                out = F.interpolate(
+                    img.float(), scale_factor=512 / patch_size, mode="trilinear"
+                )
                 input_batch = out.to(device)
                 input_batch = input_batch[0].transpose(0, 1)
                 batch_features, feature_list = img_encoder(input_batch)
                 feature_list.append(batch_features)
-                #feature_list = feature_list[::-1]
+                # feature_list = feature_list[::-1]
                 l = len(torch.where(seg == 1)[0])
                 points_torch = None
                 if l > 0:
@@ -279,46 +327,60 @@ def main():
                 else:
                     points_torch = points_torch_negative
                 new_feature = []
-                for i, (feature, prompt_encoder) in enumerate(zip(feature_list, prompt_encoder_list)):
+                for i, (feature, prompt_encoder) in enumerate(
+                    zip(feature_list, prompt_encoder_list)
+                ):
                     if i == 3:
                         new_feature.append(
-                            prompt_encoder(feature, points_torch.clone(), [patch_size, patch_size, patch_size])
+                            prompt_encoder(
+                                feature,
+                                points_torch.clone(),
+                                [patch_size, patch_size, patch_size],
+                            )
                         )
                     else:
                         new_feature.append(feature)
-                img_resize = F.interpolate(img[:, 0].permute(0, 2, 3, 1).unsqueeze(1).to(device), scale_factor=64/patch_size,
-                                           mode='trilinear')
+                img_resize = F.interpolate(
+                    img[:, 0].permute(0, 2, 3, 1).unsqueeze(1).to(device),
+                    scale_factor=64 / patch_size,
+                    mode="trilinear",
+                )
                 new_feature.append(img_resize)
-                masks = mask_decoder(new_feature, 2, patch_size//64)
+                masks = mask_decoder(new_feature, 2, patch_size // 64)
                 masks = masks.permute(0, 1, 4, 2, 3)
                 seg = seg.to(device)
                 seg = seg.unsqueeze(1)
                 loss = dice_loss(masks, seg)
                 loss_summary.append(loss.detach().cpu().numpy())
                 logger.info(
-                    'epoch: {}/{}, iter: {}/{}'.format(epoch_num, args.max_epoch, idx, len(val_data)) + ": loss:" + str(
-                        loss_summary[-1].flatten()[0]))
+                    "epoch: {}/{}, iter: {}/{}".format(
+                        epoch_num, args.max_epoch, idx, len(val_data)
+                    )
+                    + ": loss:"
+                    + str(loss_summary[-1].flatten()[0])
+                )
         logger.info("- Val metrics: " + str(np.mean(loss_summary)))
-
 
         is_best = False
         if np.mean(loss_summary) < best_loss:
             best_loss = np.mean(loss_summary)
             is_best = True
-        save_checkpoint({"epoch": epoch_num + 1,
-                        "best_val_loss": best_loss,
-                         "encoder_dict": img_encoder.state_dict(),
-                         "decoder_dict": mask_decoder.state_dict(),
-                         "feature_dict": [i.state_dict() for i in prompt_encoder_list],
-                         "encoder_opt": encoder_opt.state_dict(),
-                         "feature_opt": feature_opt.state_dict(),
-                         "decoder_opt": decoder_opt.state_dict()
-                         },
-                        is_best=is_best,
-                        checkpoint=args.snapshot_path)
+        save_checkpoint(
+            {
+                "epoch": epoch_num + 1,
+                "best_val_loss": best_loss,
+                "encoder_dict": img_encoder.state_dict(),
+                "decoder_dict": mask_decoder.state_dict(),
+                "feature_dict": [i.state_dict() for i in prompt_encoder_list],
+                "encoder_opt": encoder_opt.state_dict(),
+                "feature_opt": feature_opt.state_dict(),
+                "decoder_opt": decoder_opt.state_dict(),
+            },
+            is_best=is_best,
+            checkpoint=args.snapshot_path,
+        )
         logger.info("- Val metrics best: " + str(best_loss))
 
 
 if __name__ == "__main__":
     main()
-
