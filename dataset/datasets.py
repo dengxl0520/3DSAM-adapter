@@ -10,50 +10,60 @@ from dataset.ct_dataset import BaseCTDataset
 
 class BASVolumeDataset(BaseCTDataset):
     def _set_dataset_stat(self):
-        self.intensity_range = (-1000, 400)
+        self.intensity_range = (-1477.0, 786.0)
         self.target_spacing = (1, 1, 1)
-        # self.global_mean = 0
-        # self.global_std = 1
+        self.global_mean = -952.29052734375
+        self.global_std = 87.9747543334961
         self.spatial_index = [0, 1, 2]
         self.do_dummy_2D = False
         self.target_class = 1
 
 class ATMVolumeDataset(BaseCTDataset):
     def _set_dataset_stat(self):
-        self.intensity_range = (-1000, 400)
+        self.intensity_range = (-1263, 1903)
         self.target_spacing = (1, 1, 1)
-        # self.global_mean = 0
-        # self.global_std = 1
+        self.global_mean = -918.8084106445312
+        self.global_std = 166.7335662841797
         self.spatial_index = [0, 1, 2]
         self.do_dummy_2D = False
         self.target_class = 1
 
 class ParseVolumeDataset(BaseCTDataset):
     def _set_dataset_stat(self):
-        self.intensity_range = (-1000, 400)
+        self.intensity_range = (-1024, 1821)
         self.target_spacing = (1, 1, 1)
-        # self.global_mean = 0
-        # self.global_std = 1
+        self.global_mean = 47.54948425292969
+        self.global_std = 296.06329345703125
         self.spatial_index = [0, 1, 2]
         self.do_dummy_2D = False
         self.target_class = 1
 
 class ImageCASVolumeDataset(BaseCTDataset):
     def _set_dataset_stat(self):
-        self.intensity_range = (-1000, 400)
+        self.intensity_range = (-987, 3069)
         self.target_spacing = (1, 1, 1)
-        # self.global_mean = 0
-        # self.global_std = 1
+        self.global_mean = 148.35289001464844
+        self.global_std = 179.9505615234375
         self.spatial_index = [0, 1, 2]
         self.do_dummy_2D = False
         self.target_class = 1
 
+class LungVolumeDataset(BaseCTDataset):
+    def _set_dataset_stat(self):
+        self.intensity_range = (-1399, 3741)
+        self.target_spacing = (1, 1, 1)
+        self.global_mean = -667.354334368498
+        self.global_std = 389.3140194305848
+        self.spatial_index = [0, 1, 2]
+        self.do_dummy_2D = False
+        self.target_class = 4
 
 DATASET_DICT = {
     "bas": BASVolumeDataset,
     "atm": ATMVolumeDataset,
     "parse": ParseVolumeDataset,
     "imagecas": ImageCASVolumeDataset,
+    "lung": LungVolumeDataset,
 }
 
 DATASET_PATH_DICT = {
@@ -61,6 +71,7 @@ DATASET_PATH_DICT = {
     "atm": "/data/dengxiaolong/airway/ATM/Data/",
     "parse": "/data/dengxiaolong/airway/PARSE/Data/",
     "imagecas": "/data/dengxiaolong/airway/ImageCAS/Data/",
+    "lung": "/data/dengxiaolong/airway/Lung/Data/",
 }
 
 def load_data_volume(
