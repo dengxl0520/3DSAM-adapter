@@ -14,13 +14,14 @@ import torch.nn as nn
 from functools import partial
 import os
 from utils.util import setup_logger
+import random
 
 from modeling.efficient_sam import build_efficient_sam_vitt, build_efficient_sam_vits
 
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument(
-        "--data", default=None, type=str, choices=["bas", "atm", "parse", "imagecas"]
+        "--data", default=None, type=str, choices=["bas", "atm", "parse", "imagecas", "lung"]
     )
     parser.add_argument(
         "--snapshot_path",
@@ -46,11 +47,22 @@ def main():
     parser.add_argument("--num_worker", default=6, type=int)
     parser.add_argument("-tolerance", default=5, type=int)
     parser.add_argument("--split_model", default=0, type=int)
+    parser.add_argument("--seed", default=42, type=int)
 
     args = parser.parse_args()
+
+    seed_value = args.seed
+    np.random.seed(seed_value)  # set random seed for numpy
+    random.seed(seed_value)  # set random seed for python
+    os.environ['PYTHONHASHSEED'] = str(seed_value)  # avoid hash random
+    torch.manual_seed(seed_value)  # set random seed for CPU
+    torch.cuda.manual_seed(seed_value)  # set random seed for one GPU
+    torch.cuda.manual_seed_all(seed_value)  # set random seed for all GPU
+    torch.backends.cudnn.deterministic = True  # set random seed for convolution
+
     device = args.device
     if args.rand_crop_size == 0:
-        if args.data in ["bas", "atm", "parse", "imagecas"]:
+        if args.data in ["bas", "atm", "parse", "imagecas", "lung"]:
             args.rand_crop_size = (128, 128, 128)
     else:
         if len(args.rand_crop_size) == 1:
@@ -146,12 +158,12 @@ def main():
     mask_decoder.to(device)
 
     encoder_opt = AdamW([i for i in img_encoder.parameters() if i.requires_grad==True], lr=args.lr, weight_decay=0)
-    encoder_scheduler = torch.optim.lr_scheduler.LinearLR(encoder_opt, start_factor=1.0, end_factor=0.01, total_iters=500)
+    encoder_scheduler = torch.optim.lr_scheduler.LinearLR(encoder_opt, start_factor=1.0, end_factor=0.01, total_iters=args.max_epoch)
     feature_opt = AdamW(parameter_list, lr=args.lr, weight_decay=0)
     feature_scheduler = torch.optim.lr_scheduler.LinearLR(feature_opt, start_factor=1.0, end_factor=0.01,
-                                                          total_iters=500)
+                                                          total_iters=args.max_epoch)
     decoder_opt = AdamW([i for i in mask_decoder.parameters() if i.requires_grad == True], lr=args.lr, weight_decay=0)
-    decoder_scheduler = torch.optim.lr_scheduler.LinearLR(decoder_opt, start_factor=1.0, end_factor=0.01, total_iters=500)
+    decoder_scheduler = torch.optim.lr_scheduler.LinearLR(decoder_opt, start_factor=1.0, end_factor=0.01, total_iters=args.max_epoch)
     dice_loss = DiceLoss(include_background=False, softmax=True, to_onehot_y=True, reduction="none")
     loss_cal = DiceCELoss(include_background=False, softmax=True, to_onehot_y=True, lambda_dice=0.5, lambda_ce=0.5)
     best_loss = np.inf

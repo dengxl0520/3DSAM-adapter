@@ -1,3 +1,4 @@
+import random
 from dataset.datasets import load_data_volume
 import argparse
 import numpy as np
@@ -50,8 +51,19 @@ def main():
     )
     parser.add_argument("-tolerance", default=5, type=int)
     parser.add_argument("--split_model", default=0, type=int)
+    parser.add_argument("--seed", default=42, type=int)
 
     args = parser.parse_args()
+    
+    seed_value = args.seed
+    np.random.seed(seed_value)  # set random seed for numpy
+    random.seed(seed_value)  # set random seed for python
+    os.environ['PYTHONHASHSEED'] = str(seed_value)  # avoid hash random
+    torch.manual_seed(seed_value)  # set random seed for CPU
+    torch.cuda.manual_seed(seed_value)  # set random seed for one GPU
+    torch.cuda.manual_seed_all(seed_value)  # set random seed for all GPU
+    torch.backends.cudnn.deterministic = True  # set random seed for convolution
+
     if args.checkpoint == "last":
         file = "last.pth.tar"
     else:

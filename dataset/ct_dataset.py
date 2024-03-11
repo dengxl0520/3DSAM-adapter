@@ -3,7 +3,6 @@ from typing import Any, Callable, Dict, Hashable, List, Mapping, Optional, Seque
 from monai.config import IndexSelection, KeysCollection, SequenceStr
 from monai.transforms import (
     Compose,
-    AddChanneld,
     RandCropByPosNegLabeld,
     CropForegroundd,
     SpatialPadd,
@@ -111,15 +110,6 @@ class BaseCTDataset(Dataset):
                 scale_factor=tuple([img_spacing[i] / self.target_spacing[i] for i in range(1, 3)]),
                 mode="bilinear",
             )
-
-            if self.split != "test":
-                seg_tensor = F.interpolate(
-                    input=torch.tensor(seg[:, None, :, :]),
-                    scale_factor=tuple(
-                        [img_spacing[i] / self.target_spacing[i] for i in range(1, 3)]
-                    ),
-                    mode="bilinear",
-                )
             img = (
                 F.interpolate(
                     input=img_tensor.unsqueeze(0).permute(0, 2, 1, 3, 4).contiguous(),
@@ -131,6 +121,13 @@ class BaseCTDataset(Dataset):
             )
 
             if self.split != "test":
+                seg_tensor = F.interpolate(
+                    input=torch.tensor(seg[:, None, :, :]),
+                    scale_factor=tuple(
+                        [img_spacing[i] / self.target_spacing[i] for i in range(1, 3)]
+                    ),
+                    mode="bilinear",
+                )
                 seg = (
                     F.interpolate(
                         input=seg_tensor.unsqueeze(0).permute(0, 2, 1, 3, 4).contiguous(),
@@ -305,11 +302,16 @@ class BaseCTDataset(Dataset):
         elif  (self.do_val_crop)  and (self.split == "val"):
             transforms.extend(
                 [
-                    # CropForegroundd(
-                    #     keys=["image", "label"],
-                    #     source_key="image",
-                    #     select_fn=lambda x: x > self.intensity_range[0],
-                    # ),
+                    NormalizeIntensityd(
+                        keys=["image"],
+                        subtrahend=self.global_mean,
+                        divisor=self.global_std,
+                    ),
+                    CropForegroundd(
+                        keys=["image", "label"],
+                        source_key="image",
+                        select_fn=lambda x: x > self.intensity_range[0],
+                    ),
                     SpatialPadd(
                         keys=["image", "label"],
                         spatial_size=[i for i in self.rand_crop_spatial_size],
@@ -321,11 +323,6 @@ class BaseCTDataset(Dataset):
                         pos=1,
                         neg=0,
                         num_samples=1,
-                    ),
-                    NormalizeIntensityd(
-                        keys=["image"],
-                        subtrahend=self.global_mean,
-                        divisor=self.global_std,
                     ),
                     BinarizeLabeld(keys=["label"]),
                 ]
