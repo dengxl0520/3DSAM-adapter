@@ -1,43 +1,35 @@
 import pickle
-from typing import Any, Callable, Dict, Hashable, List, Mapping, Optional, Sequence, Union
-from monai.config import IndexSelection, KeysCollection, SequenceStr
-from monai.transforms import (
-    Compose,
-    RandCropByPosNegLabeld,
-    CropForegroundd,
-    SpatialPadd,
-    ScaleIntensityRanged,
-    RandShiftIntensityd,
-    RandFlipd,
-    RandAffined,
-    RandZoomd,
-    RandRotated,
-    RandRotate90d,
-    RandGaussianNoised,
-    RandGaussianSmoothd,
-    NormalizeIntensityd,
-    MapTransform,
-    RandScaleIntensityd,
-    RandSpatialCropd,
-)
-from torch.utils.data import DataLoader, Dataset
-import torch
-import numpy as np
+from typing import (Any, Callable, Dict, Hashable, List, Mapping, Optional,
+                    Sequence, Union)
+
 import nibabel as nib
+import numpy as np
+import torch
 import torch.nn.functional as F
+from monai.config import IndexSelection, KeysCollection, SequenceStr
+from monai.transforms import (Compose, CropForegroundd, MapTransform,
+                              NormalizeIntensityd, RandAffined,
+                              RandCropByPosNegLabeld, RandFlipd,
+                              RandGaussianNoised, RandGaussianSmoothd,
+                              RandRotate90d, RandRotated, RandScaleIntensityd,
+                              RandShiftIntensityd, RandSpatialCropd, RandZoomd,
+                              ScaleIntensityRanged, SpatialPadd)
+from torch.utils.data import DataLoader, Dataset
 
 
 class BinarizeLabeld(MapTransform):
     def __init__(
-            self,
-            keys: KeysCollection,
-            threshold: float = 0.5,
-            allow_missing_keys: bool = False,
+        self,
+        keys: KeysCollection,
+        threshold: float = 0.5,
+        allow_missing_keys: bool = False,
     ):
         super().__init__(keys, allow_missing_keys)
         self.threshold = threshold
 
-    def __call__(self, data: Mapping[Hashable, torch.Tensor]) -> Dict[Hashable, torch.Tensor]:
+    def __call__(
+        self, data: Mapping[Hashable, torch.Tensor]
+    ) -> Dict[Hashable, torch.Tensor]:
         d = dict(data)
         for key in self.key_iterator(d):
             if not isinstance(d[key], torch.Tensor):
@@ -71,11 +63,9 @@ class BaseCTDataset(Dataset):
         self.do_test_crop = do_test_crop
         self.do_nnunet_intensity_aug = do_nnunet_intensity_aug
         self.do_val_crop = do_val_crop
-        self.intensity_range = (
-            self.target_spacing
-        ) = (
-            self.global_mean
-        ) = self.global_std = self.spatial_index = self.do_dummy_2D = self.target_class = None
+        self.intensity_range = self.target_spacing = self.global_mean = (
+            self.global_std
+        ) = self.spatial_index = self.do_dummy_2D = self.target_class = None
 
         self._set_dataset_stat()
         self.transforms = self.get_transforms()
@@ -102,12 +92,14 @@ class BaseCTDataset(Dataset):
 
         seg = (seg == self.target_class).astype(np.float32)
         if (np.max(img_spacing) / np.min(img_spacing) > 8) or (
-                np.max(self.target_spacing / np.min(self.target_spacing) > 8)
+            np.max(self.target_spacing / np.min(self.target_spacing) > 8)
         ):
             # resize 2D
             img_tensor = F.interpolate(
                 input=torch.tensor(img[:, None, :, :]),
-                scale_factor=tuple([img_spacing[i] / self.target_spacing[i] for i in range(1, 3)]),
+                scale_factor=tuple(
+                    [img_spacing[i] / self.target_spacing[i] for i in range(1, 3)]
+                ),
                 mode="bilinear",
             )
             img = (
@@ -130,7 +122,9 @@ class BaseCTDataset(Dataset):
                 )
                 seg = (
                     F.interpolate(
-                        input=seg_tensor.unsqueeze(0).permute(0, 2, 1, 3, 4).contiguous(),
+                        input=seg_tensor.unsqueeze(0)
+                        .permute(0, 2, 1, 3, 4)
+                        .contiguous(),
                         scale_factor=(img_spacing[0] / self.target_spacing[0], 1, 1),
                         mode="trilinear",
                     )
@@ -162,7 +156,9 @@ class BaseCTDataset(Dataset):
                     .numpy()
                 )
 
-        if (self.aug and self.split == "train") or ((self.do_val_crop  and self.split=='val')):
+        if (self.aug and self.split == "train") or (
+            (self.do_val_crop and self.split == "val")
+        ):
             trans_dict = self.transforms({"image": img, "label": seg})[0]
             img_aug, seg_aug = trans_dict["image"], trans_dict["label"]
         else:
@@ -172,7 +168,11 @@ class BaseCTDataset(Dataset):
 
         img_aug = img_aug.repeat(3, 1, 1, 1)
 
-        return img_aug, seg_aug, np.array(img_vol.header.get_zooms())[self.spatial_index]
+        return (
+            img_aug,
+            seg_aug,
+            np.array(img_vol.header.get_zooms())[self.spatial_index],
+        )
 
     def get_transforms(self):
         transforms = [
@@ -210,12 +210,12 @@ class BaseCTDataset(Dataset):
             if self.do_dummy_2D:
                 transforms.extend(
                     [
-                       RandRotated(
+                        RandRotated(
                             keys=["image", "label"],
                             prob=0.3,
                             range_x=30 / 180 * np.pi,
                             keep_size=False,
-                                ),
+                        ),
                         RandZoomd(
                             keys=["image", "label"],
                             prob=0.3,
@@ -251,11 +251,15 @@ class BaseCTDataset(Dataset):
                     BinarizeLabeld(keys=["label"]),
                     SpatialPadd(
                         keys=["image", "label"],
-                        spatial_size=[round(i * 1.2) for i in self.rand_crop_spatial_size],
+                        spatial_size=[
+                            round(i * 1.2) for i in self.rand_crop_spatial_size
+                        ],
                     ),
                     RandCropByPosNegLabeld(
                         keys=["image", "label"],
-                        spatial_size=[round(i * 1.2) for i in self.rand_crop_spatial_size],
+                        spatial_size=[
+                            round(i * 1.2) for i in self.rand_crop_spatial_size
+                        ],
                         label_key="label",
                         pos=2,
                         neg=1,
@@ -299,7 +303,7 @@ class BaseCTDataset(Dataset):
                     BinarizeLabeld(keys=["label"]),
                 ]
             )
-        elif  (self.do_val_crop)  and (self.split == "val"):
+        elif (self.do_val_crop) and (self.split == "val"):
             transforms.extend(
                 [
                     NormalizeIntensityd(
@@ -344,4 +348,3 @@ class BaseCTDataset(Dataset):
         transforms = Compose(transforms)
 
         return transforms
-    

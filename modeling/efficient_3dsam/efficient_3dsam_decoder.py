@@ -1,13 +1,15 @@
-import torch
-from torch import Tensor
-import torch.nn as nn
-import numpy as np
-import torch.nn.functional as F
-from typing import List, Tuple, Type
 import math
+from typing import List, Tuple, Type
+
+import numpy as np
+import torch
+import torch.nn as nn
+import torch.nn.functional as F
 from segment_anything.modeling.common import MLPBlock
+from torch import Tensor
 
 # from 3DSAM-adpater
+
 
 class LayerNorm3d(nn.Module):
     def __init__(self, num_channels: int, eps: float = 1e-6) -> None:
@@ -22,6 +24,7 @@ class LayerNorm3d(nn.Module):
         x = (x - u) / torch.sqrt(s + self.eps)
         x = self.weight[:, None, None, None] * x + self.bias[:, None, None, None]
         return x
+
 
 class Adapter(nn.Module):
     def __init__(self, input_dim, mid_dim):
@@ -122,8 +125,16 @@ class TwoWayTransformer(nn.Module):
         """
         # BxCxHxW -> BxHWxC == B x N_image_tokens x C
 
-        point_embedding = F.grid_sample(image_embedding, point_coord, align_corners=False).squeeze(2).squeeze(2)
-        point_pe = F.grid_sample(image_pe, point_coord, align_corners=False).squeeze(2).squeeze(2)
+        point_embedding = (
+            F.grid_sample(image_embedding, point_coord, align_corners=False)
+            .squeeze(2)
+            .squeeze(2)
+        )
+        point_pe = (
+            F.grid_sample(image_pe, point_coord, align_corners=False)
+            .squeeze(2)
+            .squeeze(2)
+        )
         point_pe = point_pe.permute(0, 2, 1)
         point_embedding = point_embedding.permute(0, 2, 1)
         original_shape = image_embedding.shape
@@ -178,9 +189,13 @@ class TwoWayAttentionBlock(nn.Module):
         self.cross_attn_image_to_token = Attention(
             embedding_dim, num_heads, downsample_rate=attention_downsample_rate
         )
-        self.global_query = nn.parameter.Parameter(data=0.1 * torch.randn(1, 10, embedding_dim))
+        self.global_query = nn.parameter.Parameter(
+            data=0.1 * torch.randn(1, 10, embedding_dim)
+        )
 
-    def forward(self, img_embed, point_embed, img_pe, point_pe) -> Tuple[Tensor, Tensor]:
+    def forward(
+        self, img_embed, point_embed, img_pe, point_pe
+    ) -> Tuple[Tensor, Tensor]:
 
         q = torch.cat([self.global_query, point_embed], dim=1)
         self_out = self.self_attn(q=q, k=q, v=q)
@@ -221,7 +236,9 @@ class Attention(nn.Module):
         self.embedding_dim = embedding_dim
         self.internal_dim = embedding_dim // downsample_rate
         self.num_heads = num_heads
-        assert self.internal_dim % num_heads == 0, "num_heads must divide embedding_dim."
+        assert (
+            self.internal_dim % num_heads == 0
+        ), "num_heads must divide embedding_dim."
 
         self.q_proj = nn.Linear(embedding_dim, self.internal_dim)
         self.k_proj = nn.Linear(embedding_dim, self.internal_dim)
@@ -281,37 +298,35 @@ class MLPBlock(nn.Module):
 
 class PromptEncoder(nn.Module):
     def __init__(
-        self,
-        *,
-        transformer: nn.Module,
-        num_pos_feats: int = 128,
-        mask_prompt = False
+        self, *, transformer: nn.Module, num_pos_feats: int = 128, mask_prompt=False
     ) -> None:
         super().__init__()
         self.transformer = transformer
         self.register_buffer(
             "positional_encoding_gaussian_matrix",
-             torch.randn((3, num_pos_feats)),
+            torch.randn((3, num_pos_feats)),
         )
         self.mask_prompt = mask_prompt
         if mask_prompt:
-            self.default_prompt = nn.parameter.Parameter(torch.randn(1, 256, 32, 32, 32))
+            self.default_prompt = nn.parameter.Parameter(
+                torch.randn(1, 256, 32, 32, 32)
+            )
             self.mask_encoder = nn.Sequential(
-            nn.Conv3d(1, 256 // 4, kernel_size=3, stride=3),
-            LayerNorm3d(256 // 4),
-            nn.GELU(),
-            nn.Conv3d(256 // 4, 256, kernel_size=3, padding = 1, stride=1),
-            LayerNorm3d(256),
-            nn.GELU(),
-            nn.Conv3d(256, 256, kernel_size=1),
+                nn.Conv3d(1, 256 // 4, kernel_size=3, stride=3),
+                LayerNorm3d(256 // 4),
+                nn.GELU(),
+                nn.Conv3d(256 // 4, 256, kernel_size=3, padding=1, stride=1),
+                LayerNorm3d(256),
+                nn.GELU(),
+                nn.Conv3d(256, 256, kernel_size=1),
             )
 
     def forward(
         self,
         image_embeddings: torch.Tensor,
         point_coord,
-        img_size = [512, 512, 32],
-        feat_size = [32, 32, 32]
+        img_size=[512, 512, 32],
+        feat_size=[32, 32, 32],
     ) -> Tuple[torch.Tensor, torch.Tensor]:
         """
         Predict masks given image and prompt embeddings.
@@ -327,19 +342,19 @@ class PromptEncoder(nn.Module):
           torch.Tensor: batched predictions of mask quality
         """
         image_pe = self.get_img_pe(feat_size, device=image_embeddings.device).detach()
-        '''
+        """
         if self.mask_prompt:
             if masks == None:
                 image_embeddings += self.default_prompt
             else:
                 image_embeddings += self.mask_encoder(masks)
-        '''
-        point_coord[:, :, 0] = (point_coord[:, :, 0]+0.5) * 2 / img_size[2] - 1
-        point_coord[:, :, 1] = (point_coord[:, :, 1]+0.5) * 2 / img_size[1] - 1
-        point_coord[:, :, 2] = (point_coord[:, :, 2]+0.5) * 2 / img_size[0] - 1
-        point_coord = point_coord.reshape(1,1,1,-1,3)
+        """
+        point_coord[:, :, 0] = (point_coord[:, :, 0] + 0.5) * 2 / img_size[2] - 1
+        point_coord[:, :, 1] = (point_coord[:, :, 1] + 0.5) * 2 / img_size[1] - 1
+        point_coord[:, :, 2] = (point_coord[:, :, 2] + 0.5) * 2 / img_size[0] - 1
+        point_coord = point_coord.reshape(1, 1, 1, -1, 3)
         features = self.transformer(image_embeddings, image_pe, point_coord)
-        features = features.transpose(1,2).reshape([1, -1] + feat_size)
+        features = features.transpose(1, 2).reshape([1, -1] + feat_size)
 
         return features
 
@@ -375,53 +390,85 @@ class PromptEncoder(nn.Module):
         pe = self._pe_encoding(torch.stack([x_embed, y_embed, z_embed], dim=-1))
         return pe.permute(3, 0, 1, 2).unsqueeze(0)  # C x D X H x W
 
+
 class MLAHead(nn.Module):
     def __init__(self, mla_channels=256, mlahead_channels=128, norm_cfg=None):
         super(MLAHead, self).__init__()
-        self.head2 = nn.Sequential(nn.Conv3d(mla_channels, mlahead_channels, 3, padding=1, bias=False),
-                     nn.InstanceNorm3d(mlahead_channels),
-                     nn.ReLU(),
-                     nn.Conv3d(mlahead_channels, mlahead_channels, 3, padding=1, bias=False),
-                     nn.InstanceNorm3d(mlahead_channels),
-                     nn.ReLU())
-        self.head3 = nn.Sequential(nn.Conv3d(mla_channels, mlahead_channels, 3, padding=1, bias=False),
-                     nn.InstanceNorm3d(mlahead_channels),
-                     nn.ReLU(),
-                     nn.Conv3d(mlahead_channels, mlahead_channels, 3, padding=1, bias=False),
-                     nn.InstanceNorm3d(mlahead_channels),
-                     nn.ReLU())
-        self.head4 = nn.Sequential(nn.Conv3d(mla_channels, mlahead_channels, 3, padding=1, bias=False),
-                     nn.InstanceNorm3d(mlahead_channels),
-                     nn.ReLU(),
-                     nn.Conv3d(mlahead_channels, mlahead_channels, 3, padding=1, bias=False),
-                     nn.InstanceNorm3d(mlahead_channels),
-                     nn.ReLU())
-        self.head5 = nn.Sequential(nn.Conv3d(mla_channels, mlahead_channels, 3, padding=1, bias=False),
-                     nn.InstanceNorm3d(mlahead_channels),
-                     nn.ReLU(),
-                     nn.Conv3d(mlahead_channels, mlahead_channels, 3, padding=1, bias=False),
-                     nn.InstanceNorm3d(mlahead_channels),
-                     nn.ReLU())
+        self.head2 = nn.Sequential(
+            nn.Conv3d(mla_channels, mlahead_channels, 3, padding=1, bias=False),
+            nn.InstanceNorm3d(mlahead_channels),
+            nn.ReLU(),
+            nn.Conv3d(mlahead_channels, mlahead_channels, 3, padding=1, bias=False),
+            nn.InstanceNorm3d(mlahead_channels),
+            nn.ReLU(),
+        )
+        self.head3 = nn.Sequential(
+            nn.Conv3d(mla_channels, mlahead_channels, 3, padding=1, bias=False),
+            nn.InstanceNorm3d(mlahead_channels),
+            nn.ReLU(),
+            nn.Conv3d(mlahead_channels, mlahead_channels, 3, padding=1, bias=False),
+            nn.InstanceNorm3d(mlahead_channels),
+            nn.ReLU(),
+        )
+        self.head4 = nn.Sequential(
+            nn.Conv3d(mla_channels, mlahead_channels, 3, padding=1, bias=False),
+            nn.InstanceNorm3d(mlahead_channels),
+            nn.ReLU(),
+            nn.Conv3d(mlahead_channels, mlahead_channels, 3, padding=1, bias=False),
+            nn.InstanceNorm3d(mlahead_channels),
+            nn.ReLU(),
+        )
+        self.head5 = nn.Sequential(
+            nn.Conv3d(mla_channels, mlahead_channels, 3, padding=1, bias=False),
+            nn.InstanceNorm3d(mlahead_channels),
+            nn.ReLU(),
+            nn.Conv3d(mlahead_channels, mlahead_channels, 3, padding=1, bias=False),
+            nn.InstanceNorm3d(mlahead_channels),
+            nn.ReLU(),
+        )
 
     def forward(self, mla_p2, mla_p3, mla_p4, mla_p5, scale_factor):
         # head2 = self.head2(mla_p2)
-        head2 = F.interpolate(self.head2(
-            mla_p2), scale_factor = scale_factor, mode='trilinear', align_corners=True)
-        head3 = F.interpolate(self.head3(
-            mla_p3), scale_factor = scale_factor, mode='trilinear', align_corners=True)
-        head4 = F.interpolate(self.head4(
-            mla_p4), scale_factor = scale_factor, mode='trilinear', align_corners=True)
-        head5 = F.interpolate(self.head5(
-            mla_p5), scale_factor = scale_factor, mode='trilinear', align_corners=True)
+        head2 = F.interpolate(
+            self.head2(mla_p2),
+            scale_factor=scale_factor,
+            mode="trilinear",
+            align_corners=True,
+        )
+        head3 = F.interpolate(
+            self.head3(mla_p3),
+            scale_factor=scale_factor,
+            mode="trilinear",
+            align_corners=True,
+        )
+        head4 = F.interpolate(
+            self.head4(mla_p4),
+            scale_factor=scale_factor,
+            mode="trilinear",
+            align_corners=True,
+        )
+        head5 = F.interpolate(
+            self.head5(mla_p5),
+            scale_factor=scale_factor,
+            mode="trilinear",
+            align_corners=True,
+        )
         return torch.cat([head2, head3, head4, head5], dim=1)
 
 
 class VIT_MLAHead(nn.Module):
-    """ Vision Transformer with support for patch or hybrid CNN input stage
-    """
+    """Vision Transformer with support for patch or hybrid CNN input stage"""
 
-    def __init__(self, img_size=768, mla_channels=256, mlahead_channels=128, num_classes=3,
-                 norm_layer=nn.BatchNorm2d, norm_cfg=None, **kwargs):
+    def __init__(
+        self,
+        img_size=768,
+        mla_channels=256,
+        mlahead_channels=128,
+        num_classes=3,
+        norm_layer=nn.BatchNorm2d,
+        norm_cfg=None,
+        **kwargs
+    ):
         super(VIT_MLAHead, self).__init__(**kwargs)
         self.img_size = img_size
         self.norm_cfg = norm_cfg
@@ -429,28 +476,44 @@ class VIT_MLAHead(nn.Module):
         self.BatchNorm = norm_layer
         self.mlahead_channels = mlahead_channels
 
-        self.mlahead = MLAHead(mla_channels=self.mla_channels,
-                               mlahead_channels=self.mlahead_channels, norm_cfg=self.norm_cfg)
-        self.cls = nn.Sequential(nn.Conv3d(4 * mlahead_channels + 1, mlahead_channels, 3, padding=1, bias=False),
-                     nn.InstanceNorm3d(mlahead_channels),
-                     nn.ReLU(),
-                     nn.Conv3d(mlahead_channels, num_classes, 3, padding=1, bias=False))
+        self.mlahead = MLAHead(
+            mla_channels=self.mla_channels,
+            mlahead_channels=self.mlahead_channels,
+            norm_cfg=self.norm_cfg,
+        )
+        self.cls = nn.Sequential(
+            nn.Conv3d(
+                4 * mlahead_channels + 1, mlahead_channels, 3, padding=1, bias=False
+            ),
+            nn.InstanceNorm3d(mlahead_channels),
+            nn.ReLU(),
+            nn.Conv3d(mlahead_channels, num_classes, 3, padding=1, bias=False),
+        )
 
     def forward(self, inputs, scale_factor=None):
         if scale_factor == None:
             scale_factor = self.img_size / inputs[0].shape[-1]
-        x = self.mlahead(inputs[0], inputs[1], inputs[2], inputs[3], scale_factor = scale_factor)
+        x = self.mlahead(
+            inputs[0], inputs[1], inputs[2], inputs[3], scale_factor=scale_factor
+        )
         x = torch.cat([x, inputs[-1]], dim=1)
         x = self.cls(x)
         return x
 
 
 class VIT_MLAHead_h(nn.Module):
-    """ Vision Transformer with support for patch or hybrid CNN input stage
-    """
+    """Vision Transformer with support for patch or hybrid CNN input stage"""
 
-    def __init__(self, img_size=768, mla_channels=256, mlahead_channels=128, num_classes=2,
-                 norm_layer=nn.BatchNorm2d, norm_cfg=None, **kwargs):
+    def __init__(
+        self,
+        img_size=768,
+        mla_channels=256,
+        mlahead_channels=128,
+        num_classes=2,
+        norm_layer=nn.BatchNorm2d,
+        norm_cfg=None,
+        **kwargs
+    ):
         super(VIT_MLAHead_h, self).__init__(**kwargs)
         self.img_size = img_size
         self.norm_cfg = norm_cfg
@@ -458,16 +521,27 @@ class VIT_MLAHead_h(nn.Module):
         self.BatchNorm = norm_layer
         self.mlahead_channels = mlahead_channels
 
-        self.mlahead = MLAHead(mla_channels=self.mla_channels,
-                               mlahead_channels=self.mlahead_channels, norm_cfg=self.norm_cfg)
-        self.cls = nn.Sequential(nn.Conv3d(4 * mlahead_channels + 1, mlahead_channels, 3, padding=1, bias=False),
-                     nn.InstanceNorm3d(mlahead_channels),
-                     nn.ReLU(),
-                     nn.Conv3d(mlahead_channels, num_classes, 3, padding=1, bias=False))
+        self.mlahead = MLAHead(
+            mla_channels=self.mla_channels,
+            mlahead_channels=self.mlahead_channels,
+            norm_cfg=self.norm_cfg,
+        )
+        self.cls = nn.Sequential(
+            nn.Conv3d(
+                4 * mlahead_channels + 1, mlahead_channels, 3, padding=1, bias=False
+            ),
+            nn.InstanceNorm3d(mlahead_channels),
+            nn.ReLU(),
+            nn.Conv3d(mlahead_channels, num_classes, 3, padding=1, bias=False),
+        )
 
     def forward(self, inputs, scale_factor1, scale_factor2):
-        x = self.mlahead(inputs[0], inputs[1], inputs[2], inputs[3], scale_factor = scale_factor1)
+        x = self.mlahead(
+            inputs[0], inputs[1], inputs[2], inputs[3], scale_factor=scale_factor1
+        )
         x = torch.cat([x, inputs[-1]], dim=1)
         x = self.cls(x)
-        x = F.interpolate(x, scale_factor = scale_factor2, mode='trilinear', align_corners=True)
+        x = F.interpolate(
+            x, scale_factor=scale_factor2, mode="trilinear", align_corners=True
+        )
         return x
