@@ -26,7 +26,7 @@ def main():
         "--data",
         default=None,
         type=str,
-        choices=["bas", "atm", "parse", "imagecas", "lung"],
+        choices=["bas", "atm", "parse", "imagecas", "lung", "lung58"],
     )
     parser.add_argument(
         "--snapshot_path",
@@ -45,7 +45,6 @@ def main():
         type=str,
     )
     parser.add_argument("-bs", "--batch_size", default=1, type=int)
-    parser.add_argument("--num_classes", default=2, type=int)
     parser.add_argument("--lr", default=4e-4, type=float)
     parser.add_argument("--max_epoch", default=500, type=int)
     parser.add_argument("--eval_interval", default=4, type=int)
@@ -68,7 +67,7 @@ def main():
 
     device = args.device
     if args.rand_crop_size == 0:
-        if args.data in ["bas", "atm", "parse", "imagecas", "lung"]:
+        if args.data in ["bas", "atm", "parse", "imagecas", "lung", "lung58"]:
             args.rand_crop_size = (128, 128, 128)
     else:
         if len(args.rand_crop_size) == 1:
@@ -101,6 +100,8 @@ def main():
         num_worker=args.num_worker,
     )
 
+    num_classes = train_data.dataset.target_class + 1
+
     efficient_sam = build_efficient_sam_vitt()
 
     img_encoder = ImageEncoderViT_3d(
@@ -127,7 +128,7 @@ def main():
         img_encoder.to(device)
     elif args.split_model == 1:
         img_encoder.to("cuda:0")
-        for i in img_encoder.blocks[6:12]:
+        for i in img_encoder.blocks:
             i.to("cuda:1")
     else:
         raise ValueError("split_model should be 0 or 1")
@@ -166,7 +167,7 @@ def main():
             [i for i in prompt_encoder.parameters() if i.requires_grad == True]
         )
 
-    mask_decoder = VIT_MLAHead(img_size=96, num_classes=2)
+    mask_decoder = VIT_MLAHead(img_size=96, num_classes=num_classes)
     mask_decoder.to(device)
 
     encoder_opt = AdamW(

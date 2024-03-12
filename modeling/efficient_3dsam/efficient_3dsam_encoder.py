@@ -157,8 +157,8 @@ class ImageEncoderViT_3d(nn.Module):
             if idx % 3 == 0 and idx != 12:
                 x = x.to(next(self.neck_3d[idx//3-1].parameters()).device)
                 feature_list.append(self.neck_3d[idx//3-1](x.permute(0, 4, 1, 2, 3)))
-        x = x.to(next(self.blocks[0].parameters()).device)
-
+                
+        x = x.to(next(self.neck_3d[-1].parameters()).device)
         x = self.neck_3d[-1](x.permute(0, 4, 1, 2, 3))
 
         return x, feature_list
